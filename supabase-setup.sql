@@ -69,6 +69,10 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- Enable Realtime on these tables so the client sees live updates.
-alter publication supabase_realtime add table time_entries;
-alter publication supabase_realtime add table profiles;
+-- Enable Realtime on these tables so the client sees live updates (idempotent).
+do $$ begin
+  alter publication supabase_realtime add table time_entries;
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table profiles;
+exception when duplicate_object then null; end $$;
