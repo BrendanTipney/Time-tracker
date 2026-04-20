@@ -4,34 +4,38 @@
   if (!cfg || !cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes("YOUR-PROJECT")) {
     document.body.innerHTML = `<div style="padding:40px;max-width:520px;margin:40px auto;font-family:system-ui;color:#e5efef;background:#121a1a;border:1px solid #1f2c2c;border-radius:12px;">
       <h2 style="color:#2dd4bf;margin-top:0;">Setup needed</h2>
-      <p>Copy <code>config.example.js</code> to <code>config.js</code> and fill in your Supabase <code>URL</code> and <code>anon key</code> (found in your Supabase dashboard under Settings → API).</p>
+      <p>Copy <code>config.example.js</code> to <code>config.js</code> and fill in your Supabase <code>URL</code> and <code>anon key</code>.</p>
     </div>`;
     return;
   }
 
   const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
-  // ---------- State ----------
   const state = {
     user: null,
-    profiles: {},        // id -> { display_name, color }
-    entries: [],         // all entries (sorted desc)
-    runningEntry: null,  // { id, started_at, task }
+    profiles: {},
+    projects: [],
+    projectsById: {},
+    entries: [],
+    runningEntry: null,
     tickInterval: null,
     editingId: null,
+    editingProject: null,  // project id during project modal
     calDate: startOfMonth(new Date()),
     calSelected: null,
     chart: null,
-    authMode: "signin",  // or "signup"
+    authMode: "signin",
   };
 
-  // Teal palette for per-user coloring.
-  const PALETTE = ["#2dd4bf", "#f472b6", "#a78bfa", "#facc15", "#60a5fa", "#fb923c"];
+  const USER_PALETTE = ["#2dd4bf", "#f472b6", "#a78bfa", "#facc15", "#60a5fa", "#fb923c"];
+  const PROJECT_PALETTE = [
+    "#2dd4bf", "#5eead4", "#38bdf8", "#60a5fa", "#a78bfa", "#f472b6",
+    "#fb7185", "#fb923c", "#facc15", "#a3e635", "#4ade80", "#94a3b8",
+  ];
 
-  // ---------- Element shortcuts ----------
   const $ = (id) => document.getElementById(id);
+  const lastProjectKey = () => `lastProject:${state.user?.id || "anon"}`;
 
-  // ---------- Init ----------
   init();
 
   async function init() {
@@ -75,7 +79,6 @@
     const errEl = $("auth-error");
     errEl.classList.add("hidden");
     $("auth-submit").disabled = true;
-
     try {
       if (state.authMode === "signup") {
         const { data, error } = await sb.auth.signUp({
@@ -113,9 +116,11 @@
     $("app").classList.remove("hidden");
     await ensureProfile();
     await loadProfiles();
+    await loadProjects();
     await loadEntries();
     subscribeRealtime();
     renderAll();
+    restoreLastProject();
   }
 
   async function ensureProfile() {
@@ -130,21 +135,34 @@
     const { data } = await sb.from("profiles").select("*");
     state.profiles = {};
     (data || []).forEach((p, i) => {
-      state.profiles[p.id] = { ...p, color: p.color || PALETTE[i % PALETTE.length] };
+      state.profiles[p.id] = { ...p, color: p.color || USER_PALETTE[i % USER_PALETTE.length] };
     });
+  }
+
+  async function loadProjects() {
+    const { data, error } = await sb.from("projects").select("*").eq("archived", false).order("name");
+    if (error) { toast(error.message, true); return; }
+    state.projects = data || [];
+    state.projectsById = {};
+    state.projects.forEach((p) => { state.projectsById[p.id] = p; });
   }
 
   function profileOf(userId) {
     return state.profiles[userId] || { display_name: "Unknown", color: "#888" };
   }
 
+  function projectOf(projectId) {
+    return state.projectsById[projectId] || null;
+  }
+
   // ---------- App UI bindings ----------
   function bindAppUI() {
     $("sign-out").addEventListener("click", () => sb.auth.signOut());
     $("timer-button").addEventListener("click", toggleTimer);
-    $("task-input").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); toggleTimer(); }
+    $("project-select").addEventListener("change", (e) => {
+      if (state.user) localStorage.setItem(lastProjectKey(), e.target.value);
     });
+    $("project-add").addEventListener("click", () => openProjectModal());
 
     document.querySelectorAll(".tab").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -159,9 +177,12 @@
     $("edit-cancel").addEventListener("click", closeEditModal);
     $("edit-delete").addEventListener("click", deleteEdit);
 
+    $("project-form").addEventListener("submit", saveProject);
+    $("project-cancel").addEventListener("click", closeProjectModal);
+    $("project-delete").addEventListener("click", deleteProject);
+
     $("export-btn").addEventListener("click", downloadCsv);
 
-    // Default export range = current month.
     const now = new Date();
     $("export-from").value = isoDate(startOfMonth(now));
     $("export-to").value = isoDate(now);
@@ -174,6 +195,108 @@
     if (name === "chart") renderChart();
   }
 
+  // ---------- Projects ----------
+  function populateProjectSelect() {
+    const sel = $("project-select");
+    const current = sel.value;
+    sel.innerHTML = `<option value="">— select project —</option>`;
+    state.projects.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    if ([...sel.options].some((o) => o.value === current)) sel.value = current;
+  }
+
+  function populateEditProjectSelect(selectedId) {
+    const sel = $("edit-project");
+    sel.innerHTML = `<option value="">— none —</option>`;
+    state.projects.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    if (selectedId) sel.value = selectedId;
+  }
+
+  function restoreLastProject() {
+    const stored = localStorage.getItem(lastProjectKey());
+    if (stored && state.projectsById[stored]) {
+      $("project-select").value = stored;
+    } else if (state.runningEntry?.project_id) {
+      $("project-select").value = state.runningEntry.project_id;
+    }
+  }
+
+  function renderColorSwatches(selectedColor) {
+    const wrap = $("color-swatches");
+    wrap.innerHTML = "";
+    PROJECT_PALETTE.forEach((c) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.style.background = c;
+      b.dataset.color = c;
+      if (c === selectedColor) b.classList.add("selected");
+      b.addEventListener("click", () => {
+        wrap.querySelectorAll("button").forEach((x) => x.classList.remove("selected"));
+        b.classList.add("selected");
+      });
+      wrap.appendChild(b);
+    });
+  }
+
+  function openProjectModal(project) {
+    state.editingProject = project?.id || null;
+    $("project-modal-title").textContent = project ? "Edit project" : "New project";
+    $("project-name").value = project?.name || "";
+    renderColorSwatches(project?.color || PROJECT_PALETTE[Math.floor(Math.random() * PROJECT_PALETTE.length)]);
+    $("project-delete").classList.toggle("hidden", !project || project.created_by !== state.user.id);
+    $("project-modal").classList.remove("hidden");
+    setTimeout(() => $("project-name").focus(), 0);
+  }
+
+  function closeProjectModal() {
+    $("project-modal").classList.add("hidden");
+    state.editingProject = null;
+  }
+
+  async function saveProject(e) {
+    e.preventDefault();
+    const name = $("project-name").value.trim();
+    const selected = $("color-swatches").querySelector("button.selected");
+    const color = selected?.dataset.color || PROJECT_PALETTE[0];
+    if (!name) return;
+
+    if (state.editingProject) {
+      const { error } = await sb.from("projects").update({ name, color }).eq("id", state.editingProject);
+      if (error) return toast(error.message, true);
+    } else {
+      const { data, error } = await sb.from("projects").insert({ name, color, created_by: state.user.id }).select().single();
+      if (error) return toast(error.message, true);
+      await loadProjects();
+      populateProjectSelect();
+      $("project-select").value = data.id;
+      localStorage.setItem(lastProjectKey(), data.id);
+    }
+    await loadProjects();
+    populateProjectSelect();
+    closeProjectModal();
+    renderAll();
+  }
+
+  async function deleteProject() {
+    if (!state.editingProject) return;
+    if (!confirm("Delete this project? Entries will be kept but lose their project link.")) return;
+    const { error } = await sb.from("projects").delete().eq("id", state.editingProject);
+    if (error) return toast(error.message, true);
+    await loadProjects();
+    populateProjectSelect();
+    closeProjectModal();
+    renderAll();
+  }
+
   // ---------- Entries ----------
   async function loadEntries() {
     const { data, error } = await sb.from("time_entries").select("*").order("started_at", { ascending: false });
@@ -184,15 +307,10 @@
   }
 
   function subscribeRealtime() {
-    sb.channel("time_entries_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, async () => {
-        await loadEntries();
-        renderAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, async () => {
-        await loadProfiles();
-        renderAll();
-      })
+    sb.channel("tt_changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, async () => { await loadEntries(); renderAll(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, async () => { await loadProfiles(); renderAll(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, async () => { await loadProjects(); populateProjectSelect(); renderAll(); })
       .subscribe();
   }
 
@@ -202,18 +320,20 @@
       const { error } = await sb.from("time_entries").update({ ended_at: new Date().toISOString() }).eq("id", state.runningEntry.id);
       if (error) return toast(error.message, true);
       state.runningEntry = null;
-      $("task-input").value = "";
       await loadEntries(); renderAll();
     } else {
-      const task = $("task-input").value.trim();
+      const projectId = $("project-select").value || null;
+      if (!projectId) return toast("Pick a project first (or create one with + New).", true);
       const payload = {
         user_id: state.user.id,
         started_at: new Date().toISOString(),
-        task,
+        project_id: projectId,
+        task: "",
       };
       const { data, error } = await sb.from("time_entries").insert(payload).select().single();
       if (error) return toast(error.message, true);
       state.runningEntry = data;
+      localStorage.setItem(lastProjectKey(), projectId);
       await loadEntries(); renderAll();
     }
     updateTimerUI();
@@ -223,17 +343,20 @@
     const panel = document.querySelector(".timer-panel");
     const btn = $("timer-button");
     const status = $("timer-status");
+    const sel = $("project-select");
     if (state.runningEntry) {
       panel.classList.add("running");
       btn.textContent = "Stop";
       status.textContent = "Running since " + formatTime(new Date(state.runningEntry.started_at));
-      $("task-input").value = state.runningEntry.task || "";
+      if (state.runningEntry.project_id) sel.value = state.runningEntry.project_id;
+      sel.disabled = true;
       if (!state.tickInterval) state.tickInterval = setInterval(tickTimer, 1000);
       tickTimer();
     } else {
       panel.classList.remove("running");
       btn.textContent = "Start";
       status.textContent = "";
+      sel.disabled = false;
       $("timer-display").textContent = "00:00:00";
       if (state.tickInterval) { clearInterval(state.tickInterval); state.tickInterval = null; }
     }
@@ -249,6 +372,7 @@
   function renderAll() {
     populateUserChip();
     populateUserFilter();
+    populateProjectSelect();
     renderEntries();
     if (document.querySelector(".tab.active")?.dataset.tab === "calendar") renderCalendar();
     if (document.querySelector(".tab.active")?.dataset.tab === "chart") renderChart();
@@ -278,7 +402,7 @@
     const list = state.entries.filter((e) => filter === "all" || e.user_id === filter);
     const container = $("entries-list");
     if (!list.length) {
-      container.innerHTML = `<p class="empty">No entries yet. Press Start to track your first session.</p>`;
+      container.innerHTML = `<p class="empty">No entries yet. Pick a project and press Start.</p>`;
       return;
     }
     const groups = groupByDay(list);
@@ -294,16 +418,20 @@
 
   function renderEntry(e) {
     const p = profileOf(e.user_id);
+    const proj = projectOf(e.project_id);
     const running = !e.ended_at;
     const start = new Date(e.started_at);
     const end = e.ended_at ? new Date(e.ended_at) : new Date();
     const dur = end - start;
     const row = document.createElement("div");
     row.className = "entry" + (running ? " running" : "");
+    const title = proj ? escapeHtml(proj.name) : (e.task ? escapeHtml(e.task) : "(no project)");
+    const projColor = proj?.color || "#555";
+    const note = proj && e.task ? ` · ${escapeHtml(e.task)}` : "";
     row.innerHTML = `
       <div class="stripe" style="background:${p.color}"></div>
       <div class="main">
-        <div class="task">${escapeHtml(e.task || "(no label)")}</div>
+        <div class="task"><span class="project-chip"><span class="dot" style="background:${projColor}"></span>${title}</span>${note}</div>
         <div class="meta">${escapeHtml(p.display_name)} · ${formatTime(start)} – ${running ? "running" : formatTime(end)}</div>
       </div>
       <div class="duration">${formatDuration(dur, false)}</div>
@@ -321,6 +449,7 @@
   // ---------- Edit modal ----------
   function openEditModal(entry) {
     state.editingId = entry.id;
+    populateEditProjectSelect(entry.project_id);
     $("edit-task").value = entry.task || "";
     $("edit-started").value = toLocalInput(new Date(entry.started_at));
     $("edit-ended").value = entry.ended_at ? toLocalInput(new Date(entry.ended_at)) : "";
@@ -337,6 +466,7 @@
     const started = $("edit-started").value;
     const ended = $("edit-ended").value;
     const payload = {
+      project_id: $("edit-project").value || null,
       task: $("edit-task").value.trim(),
       started_at: new Date(started).toISOString(),
       ended_at: ended ? new Date(ended).toISOString() : null,
@@ -372,8 +502,7 @@
     const cells = [];
     for (let i = 0; i < startDay; i++) {
       const day = prevDays - startDay + 1 + i;
-      const d = new Date(date.getFullYear(), date.getMonth() - 1, day);
-      cells.push({ date: d, otherMonth: true });
+      cells.push({ date: new Date(date.getFullYear(), date.getMonth() - 1, day), otherMonth: true });
     }
     for (let d = 1; d <= daysInMonth; d++) {
       cells.push({ date: new Date(date.getFullYear(), date.getMonth(), d), otherMonth: false });
@@ -385,15 +514,15 @@
     }
 
     const today = isoDate(new Date());
-    cells.forEach(({ date: d, otherMonth }) => {
+    cells.forEach(({ date: d, otherMonth }, i) => {
       const key = isoDate(d);
       const total = dayTotals[key];
       const cell = document.createElement("div");
       cell.className = "cal-cell" + (otherMonth ? " other-month" : "") + (key === today ? " today" : "") + (state.calSelected === key ? " selected" : "");
-      const userColors = total ? Object.keys(total.byUser).map((uid) => profileOf(uid).color) : [];
+      const dotColors = total ? Object.keys(total.byProject).slice(0, 4).map((pid) => projectOf(pid)?.color || "#555") : [];
       cell.innerHTML = `
         <div class="day-num">${d.getDate()}</div>
-        <div class="dots">${userColors.map((c) => `<span style="background:${c}"></span>`).join("")}</div>
+        <div class="dots">${dotColors.map((c) => `<span style="background:${c}"></span>`).join("")}</div>
         <div class="day-hours">${total ? formatHours(total.total) : ""}</div>
       `;
       cell.addEventListener("click", () => {
@@ -402,9 +531,29 @@
         renderDayDetail(key);
       });
       grid.appendChild(cell);
+
+      if ((i + 1) % 7 === 0) {
+        const weekStart = cells[i - 6].date;
+        const weekTotalMs = sumWeekHours(weekStart, dayTotals);
+        const weekCell = document.createElement("div");
+        weekCell.className = "cal-week-total";
+        weekCell.textContent = weekTotalMs ? formatHours(weekTotalMs) : "—";
+        grid.appendChild(weekCell);
+      }
     });
 
     if (state.calSelected) renderDayDetail(state.calSelected);
+  }
+
+  function sumWeekHours(weekStart, dayTotals) {
+    let total = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      const key = isoDate(d);
+      if (dayTotals[key]) total += dayTotals[key].total;
+    }
+    return total;
   }
 
   function renderDayDetail(key) {
@@ -423,7 +572,6 @@
   function renderChart() {
     const range = $("chart-range").value;
     const { labels, datasets, totals } = buildChartData(range);
-
     const ctx = $("chart-canvas").getContext("2d");
     if (state.chart) state.chart.destroy();
     state.chart = new Chart(ctx, {
@@ -438,7 +586,7 @@
         },
         plugins: {
           legend: { labels: { color: "#e5efef" } },
-          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}h` } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(2)}h` } },
         },
       },
     });
@@ -460,8 +608,7 @@
   function buildChartData(range) {
     const now = new Date();
     let buckets = [];
-    let bucketKey;
-    let labelFmt;
+    let bucketKey, labelFmt;
 
     if (range === "week") {
       for (let i = 6; i >= 0; i--) {
@@ -490,8 +637,8 @@
     const labels = buckets.map(labelFmt);
     const earliest = buckets[0];
 
-    const byUser = {};   // uid -> { key -> hours }
-    const totals = {};   // uid -> hours
+    const byUser = {};
+    const totals = {};
     state.entries.forEach((e) => {
       if (!e.ended_at) return;
       const start = new Date(e.started_at);
@@ -533,18 +680,19 @@
       const s = new Date(e.started_at);
       return s >= fromDt && s <= toDt;
     });
-
     if (!rows.length) return toast("No entries in that range.", true);
 
-    const header = ["Date", "User", "Task", "Started", "Ended", "Duration (hours)"];
+    const header = ["Date", "User", "Project", "Note", "Started", "Ended", "Duration (hours)"];
     const lines = [header.join(",")];
     rows.forEach((e) => {
       const s = new Date(e.started_at);
       const end = new Date(e.ended_at);
       const hours = ((end - s) / 3600000).toFixed(3);
+      const proj = projectOf(e.project_id);
       lines.push([
         csv(isoDate(s)),
         csv(profileOf(e.user_id).display_name),
+        csv(proj?.name || ""),
         csv(e.task || ""),
         csv(s.toISOString()),
         csv(end.toISOString()),
@@ -567,42 +715,30 @@
     s = String(s);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }
-
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
   }
-
   function isoDate(d) {
     const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,"0"), day = String(d.getDate()).padStart(2,"0");
     return `${y}-${m}-${day}`;
   }
-
   function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
   function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
-
-  function formatTime(d) {
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  }
-
+  function formatTime(d) { return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }); }
   function formatDuration(ms, withSeconds) {
     const s = Math.max(0, Math.floor(ms / 1000));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
     const pad = (n) => String(n).padStart(2, "0");
     return withSeconds ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(h)}:${pad(m)}`;
   }
-
   function formatHours(ms) {
     const h = ms / 3600000;
     return h >= 10 ? h.toFixed(0) + "h" : h.toFixed(1) + "h";
   }
-
   function toLocalInput(d) {
     const pad = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
-
   function groupByDay(entries) {
     const map = new Map();
     const today = isoDate(new Date());
@@ -618,20 +754,18 @@
     });
     return [...map.entries()];
   }
-
   function computeDayTotals(entries) {
     const totals = {};
     entries.forEach((e) => {
       if (!e.ended_at) return;
       const key = isoDate(new Date(e.started_at));
       const ms = new Date(e.ended_at) - new Date(e.started_at);
-      totals[key] = totals[key] || { total: 0, byUser: {} };
+      totals[key] = totals[key] || { total: 0, byProject: {} };
       totals[key].total += ms;
-      totals[key].byUser[e.user_id] = (totals[key].byUser[e.user_id] || 0) + ms;
+      if (e.project_id) totals[key].byProject[e.project_id] = (totals[key].byProject[e.project_id] || 0) + ms;
     });
     return totals;
   }
-
   let toastTimer;
   function toast(msg, isError) {
     const el = $("toast");

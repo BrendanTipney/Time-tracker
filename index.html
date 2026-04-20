@@ -47,7 +47,12 @@
 
     <section class="timer-panel">
       <div class="timer-display" id="timer-display">00:00:00</div>
-      <input type="text" id="task-input" placeholder="What are you working on?" maxlength="120" />
+      <div class="project-row">
+        <select id="project-select">
+          <option value="">— select project —</option>
+        </select>
+        <button type="button" id="project-add" class="btn ghost small" title="New project">+ New</button>
+      </div>
       <button id="timer-button" class="btn primary big">Start</button>
       <p id="timer-status" class="muted small"></p>
     </section>
@@ -77,7 +82,7 @@
           <button id="cal-next" class="btn ghost">▶</button>
         </div>
         <div class="cal-grid-labels">
-          <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+          <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span class="week-col">Week</span>
         </div>
         <div id="cal-grid" class="cal-grid"></div>
         <div id="cal-day-detail" class="cal-day-detail hidden"></div>
@@ -121,13 +126,34 @@
     <div class="modal-card">
       <h3>Edit entry</h3>
       <form id="edit-form">
-        <label>Task <input type="text" id="edit-task" /></label>
+        <label>Project
+          <select id="edit-project"></select>
+        </label>
+        <label>Note <input type="text" id="edit-task" placeholder="optional" /></label>
         <label>Started <input type="datetime-local" id="edit-started" step="1" required /></label>
         <label>Ended <input type="datetime-local" id="edit-ended" step="1" /></label>
         <div class="modal-actions">
           <button type="button" id="edit-delete" class="btn danger">Delete</button>
           <div class="spacer"></div>
           <button type="button" id="edit-cancel" class="btn ghost">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="project-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="project-modal-title">New project</h3>
+      <form id="project-form">
+        <label>Name <input type="text" id="project-name" required maxlength="60" /></label>
+        <label>Color
+          <div class="color-swatches" id="color-swatches"></div>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="project-delete" class="btn danger hidden">Delete</button>
+          <div class="spacer"></div>
+          <button type="button" id="project-cancel" class="btn ghost">Cancel</button>
           <button type="submit" class="btn primary">Save</button>
         </div>
       </form>
