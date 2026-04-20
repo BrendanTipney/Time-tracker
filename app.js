@@ -27,6 +27,8 @@
     authMode: "signin",
   };
 
+  const WORK_DAY_HOURS = 7;
+  const WORK_WEEK_HOURS = WORK_DAY_HOURS * 5;
   const USER_PALETTE = ["#2dd4bf", "#f472b6", "#a78bfa", "#facc15", "#60a5fa", "#fb923c"];
   const PROJECT_PALETTE = [
     "#2dd4bf", "#5eead4", "#38bdf8", "#60a5fa", "#a78bfa", "#f472b6",
@@ -316,6 +318,10 @@
 
   // ---------- Timer ----------
   async function toggleTimer() {
+    const btn = $("timer-button");
+    btn.classList.remove("bump");
+    void btn.offsetWidth;
+    btn.classList.add("bump");
     if (state.runningEntry) {
       const { error } = await sb.from("time_entries").update({ ended_at: new Date().toISOString() }).eq("id", state.runningEntry.id);
       if (error) return toast(error.message, true);
@@ -366,6 +372,71 @@
     if (!state.runningEntry) return;
     const elapsed = Date.now() - new Date(state.runningEntry.started_at).getTime();
     $("timer-display").textContent = formatDuration(elapsed, true);
+    updateDaySummary();
+  }
+
+  // ---------- Day summary ----------
+  function computeTodayHoursForUser() {
+    const today = isoDate(new Date());
+    let ms = 0;
+    state.entries.forEach((e) => {
+      if (e.user_id !== state.user.id) return;
+      if (isoDate(new Date(e.started_at)) !== today) return;
+      const start = new Date(e.started_at);
+      const end = e.ended_at ? new Date(e.ended_at) : new Date();
+      ms += end - start;
+    });
+    return ms;
+  }
+
+  function lerpColor(a, b, t) {
+    const parse = (h) => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+    const [r1,g1,b1] = parse(a), [r2,g2,b2] = parse(b);
+    const mix = (x,y) => Math.round(x + (y - x) * t);
+    const hex = (n) => n.toString(16).padStart(2,"0");
+    return `#${hex(mix(r1,r2))}${hex(mix(g1,g2))}${hex(mix(b1,b2))}`;
+  }
+
+  function updateDaySummary() {
+    const ms = computeTodayHoursForUser();
+    const hours = ms / 3600000;
+    const goalHours = 7;
+    const rawPct = (hours / goalHours) * 100;
+    const clampedPct = Math.min(100, rawPct);
+
+    $("day-hours").textContent = hours.toFixed(1) + "h";
+    $("day-pct").textContent = rawPct.toFixed(0) + "%";
+
+    const t = Math.min(1, hours / goalHours);
+    const color = lerpColor("#fb7185", "#2dd4bf", t);
+    const fill = $("day-progress-fill");
+    fill.style.width = clampedPct + "%";
+    fill.style.background = color;
+    $("day-hours").style.color = color;
+    $("day-pct").style.color = color;
+
+    // Marker stays at the 7h line; visible only when we've crossed into overtime.
+    const marker = $("day-progress-marker");
+    if (rawPct > 100) {
+      // Shrink the fill to show the 7h mark at an appropriate position within an extended bar.
+      const barPct = Math.min(100, (goalHours / hours) * 100);
+      marker.style.left = barPct + "%";
+      marker.style.opacity = "1";
+      fill.style.width = "100%"; // visually full
+    } else {
+      marker.style.opacity = "0";
+    }
+
+    const panel = $("day-summary");
+    panel.classList.toggle("running", !!state.runningEntry);
+    panel.classList.toggle("complete", hours >= goalHours);
+    panel.classList.toggle("overtime", hours > goalHours);
+
+    const footer = $("day-summary-footer");
+    if (hours === 0) footer.textContent = "No time tracked today yet.";
+    else if (hours < goalHours) footer.textContent = `${(goalHours - hours).toFixed(1)}h left to goal.`;
+    else if (hours === goalHours) footer.textContent = `Goal hit.`;
+    else footer.innerHTML = `<span class="over">+${(hours - goalHours).toFixed(1)}h</span> over goal.`;
   }
 
   // ---------- Render ----------
@@ -374,6 +445,7 @@
     populateUserFilter();
     populateProjectSelect();
     renderEntries();
+    updateDaySummary();
     if (document.querySelector(".tab.active")?.dataset.tab === "calendar") renderCalendar();
     if (document.querySelector(".tab.active")?.dataset.tab === "chart") renderChart();
   }
@@ -428,11 +500,15 @@
     const title = proj ? escapeHtml(proj.name) : (e.task ? escapeHtml(e.task) : "(no project)");
     const projColor = proj?.color || "#555";
     const note = proj && e.task ? ` · ${escapeHtml(e.task)}` : "";
+    const hours = dur / 3600000;
+    const pct = Math.min(100, (hours / WORK_DAY_HOURS) * 100);
+    const fillColor = proj?.color || p.color;
     row.innerHTML = `
       <div class="stripe" style="background:${p.color}"></div>
       <div class="main">
         <div class="task"><span class="project-chip"><span class="dot" style="background:${projColor}"></span>${title}</span>${note}</div>
-        <div class="meta">${escapeHtml(p.display_name)} · ${formatTime(start)} – ${running ? "running" : formatTime(end)}</div>
+        <div class="meta">${escapeHtml(p.display_name)} · ${formatTime(start)} – ${running ? "running" : formatTime(end)}<span class="pct">${pct.toFixed(0)}% of ${WORK_DAY_HOURS}h</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div></div>
       </div>
       <div class="duration">${formatDuration(dur, false)}</div>
       <button class="edit-btn" title="Edit">✎</button>
@@ -536,8 +612,16 @@
         const weekStart = cells[i - 6].date;
         const weekTotalMs = sumWeekHours(weekStart, dayTotals);
         const weekCell = document.createElement("div");
-        weekCell.className = "cal-week-total";
-        weekCell.textContent = weekTotalMs ? formatHours(weekTotalMs) : "—";
+        const hours = weekTotalMs / 3600000;
+        const delta = hours - WORK_WEEK_HOURS;
+        const hasData = weekTotalMs > 0;
+        weekCell.className = "cal-week-total" + (hasData ? (delta >= 0 ? " met" : " under") : "");
+        if (hasData) {
+          const sign = delta >= 0 ? "+" : "−";
+          weekCell.innerHTML = `<div class="total">${formatHours(weekTotalMs)}</div><div class="delta">${sign}${Math.abs(delta).toFixed(1)}h</div>`;
+        } else {
+          weekCell.innerHTML = `<div class="total muted">—</div>`;
+        }
         grid.appendChild(weekCell);
       }
     });

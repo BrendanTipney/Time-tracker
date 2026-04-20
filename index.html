@@ -66,6 +66,19 @@
 
     <main class="tab-content">
       <section id="tab-today" class="tab-pane active">
+        <div id="day-summary" class="day-summary">
+          <div class="day-summary-header">
+            <div class="day-total">
+              <span class="hours" id="day-hours">0.0</span><span class="goal" id="day-goal">/ 7h today</span>
+            </div>
+            <div class="day-pct" id="day-pct">0%</div>
+          </div>
+          <div class="day-progress">
+            <div class="day-progress-fill" id="day-progress-fill"></div>
+            <div class="day-progress-marker" id="day-progress-marker" title="7h"></div>
+          </div>
+          <div class="day-summary-footer" id="day-summary-footer"></div>
+        </div>
         <div class="section-header">
           <h2>Recent entries</h2>
           <select id="filter-user">
