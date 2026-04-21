@@ -623,8 +623,9 @@
           const p = profileOf(uid);
           const sign = delta >= 0 ? "+" : "−";
           const deltaTxt = hasData ? `<span class="delta">${sign}${Math.abs(delta).toFixed(1)}h</span>` : "";
+          const initial = (p.display_name || "?").trim().charAt(0);
           return `<div class="wk-row ${cls}">
-            <span class="wk-dot" style="background:${p.color}"></span>
+            <span class="wk-initial" style="background:${p.color}">${escapeHtml(initial)}</span>
             <span class="hours">${hasData ? formatHours(ms) : "—"}</span>
             ${deltaTxt}
           </div>`;
@@ -832,7 +833,7 @@
   }
   function toLocalInput(d) {
     const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
   function groupByDay(entries) {
     const map = new Map();
