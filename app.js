@@ -170,7 +170,6 @@
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
     });
 
-    $("filter-user").addEventListener("change", renderEntries);
     $("cal-prev").addEventListener("click", () => { state.calDate = addMonths(state.calDate, -1); renderCalendar(); });
     $("cal-next").addEventListener("click", () => { state.calDate = addMonths(state.calDate, 1); renderCalendar(); });
     $("chart-range").addEventListener("change", renderChart);
@@ -442,7 +441,6 @@
   // ---------- Render ----------
   function renderAll() {
     populateUserChip();
-    populateUserFilter();
     populateProjectSelect();
     renderEntries();
     updateDaySummary();
@@ -470,8 +468,7 @@
   }
 
   function renderEntries() {
-    const filter = $("filter-user").value;
-    const list = state.entries.filter((e) => filter === "all" || e.user_id === filter);
+    const list = state.entries.filter((e) => e.user_id === state.user.id);
     const container = $("entries-list");
     if (!list.length) {
       container.innerHTML = `<p class="empty">No entries yet. Pick a project and press Start.</p>`;
@@ -610,18 +607,29 @@
 
       if ((i + 1) % 7 === 0) {
         const weekStart = cells[i - 6].date;
-        const weekTotalMs = sumWeekHours(weekStart, dayTotals);
+        const byUser = sumWeekByUser(weekStart, dayTotals);
         const weekCell = document.createElement("div");
-        const hours = weekTotalMs / 3600000;
-        const delta = hours - WORK_WEEK_HOURS;
-        const hasData = weekTotalMs > 0;
-        weekCell.className = "cal-week-total" + (hasData ? (delta >= 0 ? " met" : " under") : "");
-        if (hasData) {
+        weekCell.className = "cal-week-total";
+        // Always list every known profile so both users are visible, even with 0h.
+        const userIds = Object.keys(state.profiles);
+        // Self first.
+        userIds.sort((a, b) => (a === state.user.id ? -1 : b === state.user.id ? 1 : 0));
+        const rows = userIds.map((uid) => {
+          const ms = byUser[uid] || 0;
+          const hours = ms / 3600000;
+          const delta = hours - WORK_WEEK_HOURS;
+          const hasData = ms > 0;
+          const cls = hasData ? (delta >= 0 ? "met" : "under") : "zero";
+          const p = profileOf(uid);
           const sign = delta >= 0 ? "+" : "−";
-          weekCell.innerHTML = `<div class="total">${formatHours(weekTotalMs)}</div><div class="delta">${sign}${Math.abs(delta).toFixed(1)}h</div>`;
-        } else {
-          weekCell.innerHTML = `<div class="total muted">—</div>`;
-        }
+          const deltaTxt = hasData ? `<span class="delta">${sign}${Math.abs(delta).toFixed(1)}h</span>` : "";
+          return `<div class="wk-row ${cls}">
+            <span class="wk-dot" style="background:${p.color}"></span>
+            <span class="hours">${hasData ? formatHours(ms) : "—"}</span>
+            ${deltaTxt}
+          </div>`;
+        });
+        weekCell.innerHTML = rows.join("");
         grid.appendChild(weekCell);
       }
     });
@@ -629,15 +637,18 @@
     if (state.calSelected) renderDayDetail(state.calSelected);
   }
 
-  function sumWeekHours(weekStart, dayTotals) {
-    let total = 0;
+  function sumWeekByUser(weekStart, dayTotals) {
+    const byUser = {};
     for (let i = 0; i < 7; i++) {
       const d = new Date(weekStart);
       d.setDate(weekStart.getDate() + i);
       const key = isoDate(d);
-      if (dayTotals[key]) total += dayTotals[key].total;
+      if (!dayTotals[key]) continue;
+      Object.entries(dayTotals[key].byUser).forEach(([uid, ms]) => {
+        byUser[uid] = (byUser[uid] || 0) + ms;
+      });
     }
-    return total;
+    return byUser;
   }
 
   function renderDayDetail(key) {
@@ -844,9 +855,10 @@
       if (!e.ended_at) return;
       const key = isoDate(new Date(e.started_at));
       const ms = new Date(e.ended_at) - new Date(e.started_at);
-      totals[key] = totals[key] || { total: 0, byProject: {} };
+      totals[key] = totals[key] || { total: 0, byProject: {}, byUser: {} };
       totals[key].total += ms;
       if (e.project_id) totals[key].byProject[e.project_id] = (totals[key].byProject[e.project_id] || 0) + ms;
+      totals[key].byUser[e.user_id] = (totals[key].byUser[e.user_id] || 0) + ms;
     });
     return totals;
   }

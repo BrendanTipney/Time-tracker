@@ -344,11 +344,23 @@ label span { font-size: 12px; }
   font-variant-numeric: tabular-nums;
 }
 
-.cal-week-total { flex-direction: column; gap: 1px; padding: 4px 0; }
-.cal-week-total .total { font-size: 13px; font-weight: 500; }
-.cal-week-total .delta { font-size: 10px; font-variant-numeric: tabular-nums; }
-.cal-week-total.under .total, .cal-week-total.under .delta { color: var(--coral); }
-.cal-week-total.met .total, .cal-week-total.met .delta { color: var(--teal-bright); }
+.cal-week-total { flex-direction: column; gap: 3px; padding: 6px 4px; justify-content: center; }
+.cal-week-total .wk-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+  justify-content: center;
+}
+.cal-week-total .wk-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.cal-week-total .wk-row .hours { font-weight: 500; font-size: 11px; }
+.cal-week-total .wk-row .delta { font-size: 9px; opacity: 0.85; }
+.cal-week-total .wk-row.under .hours, .cal-week-total .wk-row.under .delta { color: var(--coral); }
+.cal-week-total .wk-row.met .hours, .cal-week-total .wk-row.met .delta { color: var(--teal-bright); }
+.cal-week-total .wk-row.zero .hours { color: var(--muted); }
 .empty { color: var(--muted); text-align: center; padding: 32px 0; font-size: 14px; }
 .day-group { margin-top: 14px; }
 .day-group:first-child { margin-top: 0; }
