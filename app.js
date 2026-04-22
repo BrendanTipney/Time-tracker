@@ -630,11 +630,16 @@
       const total = dayTotals[key];
       const cell = document.createElement("div");
       cell.className = "cal-cell" + (otherMonth ? " other-month" : "") + (key === today ? " today" : "") + (state.calSelected === key ? " selected" : "");
-      const dotColors = total ? Object.keys(total.byProject).slice(0, 4).map((pid) => projectOf(pid)?.color || "#555") : [];
+      const userIds = Object.keys(state.profiles).sort((a, b) => (a === state.user.id ? -1 : b === state.user.id ? 1 : 0));
+      const userRows = total ? userIds.map((uid) => {
+        const ms = total.byUser[uid] || 0;
+        if (!ms) return "";
+        const p = profileOf(uid);
+        return `<div class="cal-user-row"><span class="cal-user-dot" style="background:${p.color}"></span><span>${formatHours(ms)}</span></div>`;
+      }).filter(Boolean).join("") : "";
       cell.innerHTML = `
         <div class="day-num">${d.getDate()}</div>
-        <div class="dots">${dotColors.map((c) => `<span style="background:${c}"></span>`).join("")}</div>
-        <div class="day-hours">${total ? formatHours(total.total) : ""}</div>
+        <div class="day-user-hours">${userRows}</div>
       `;
       cell.addEventListener("click", () => {
         state.calSelected = key;

@@ -419,9 +419,16 @@ label span { font-size: 12px; }
 .cal-cell.today { border-color: var(--teal); }
 .cal-cell.selected { background: var(--surface-2); border-color: var(--teal); }
 .cal-cell .day-num { font-weight: 500; }
-.cal-cell .day-hours { font-size: 11px; color: var(--teal); font-variant-numeric: tabular-nums; margin-top: auto; }
-.cal-cell .dots { display: flex; gap: 2px; }
-.cal-cell .dots span { width: 5px; height: 5px; border-radius: 50%; }
+.cal-cell .day-user-hours {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-cell .cal-user-row { display: flex; align-items: center; gap: 4px; }
+.cal-cell .cal-user-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
 .cal-day-detail {
   margin-top: 18px;
