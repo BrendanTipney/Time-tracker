@@ -19,6 +19,7 @@
     entries: [],
     runningEntry: null,
     tickInterval: null,
+    lastTickMs: 0,
     editingId: null,
     editingProject: null,  // project id during project modal
     calDate: startOfMonth(new Date()),
@@ -165,6 +166,13 @@
       if (state.user) localStorage.setItem(lastProjectKey(), e.target.value);
     });
     $("project-add").addEventListener("click", () => openProjectModal());
+
+    // Sleep-pause toggle state is stored globally per-browser.
+    const sleepToggle = $("sleep-pause");
+    sleepToggle.checked = localStorage.getItem("sleepPause") === "1";
+    sleepToggle.addEventListener("change", () => {
+      localStorage.setItem("sleepPause", sleepToggle.checked ? "1" : "0");
+    });
 
     document.querySelectorAll(".tab").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -355,7 +363,10 @@
       status.textContent = "Running since " + formatTime(new Date(state.runningEntry.started_at));
       if (state.runningEntry.project_id) sel.value = state.runningEntry.project_id;
       sel.disabled = true;
-      if (!state.tickInterval) state.tickInterval = setInterval(tickTimer, 1000);
+      if (!state.tickInterval) {
+        state.lastTickMs = Date.now();
+        state.tickInterval = setInterval(tickTimer, 1000);
+      }
       tickTimer();
     } else {
       panel.classList.remove("running");
@@ -369,9 +380,32 @@
 
   function tickTimer() {
     if (!state.runningEntry) return;
-    const elapsed = Date.now() - new Date(state.runningEntry.started_at).getTime();
+    const now = Date.now();
+    // Sleep detection: if the tick gap is much larger than the 1s interval,
+    // the machine likely slept (or tab was deeply throttled). If enabled,
+    // auto-stop the timer at the last live tick.
+    const gap = now - state.lastTickMs;
+    if (gap > 30000 && $("sleep-pause").checked) {
+      const endAt = new Date(state.lastTickMs + 1000).toISOString();
+      autoStopOnSleep(endAt, gap);
+      return;
+    }
+    state.lastTickMs = now;
+    const elapsed = now - new Date(state.runningEntry.started_at).getTime();
     $("timer-display").textContent = formatDuration(elapsed, true);
     updateDaySummary();
+  }
+
+  async function autoStopOnSleep(endAt, gapMs) {
+    const entry = state.runningEntry;
+    state.runningEntry = null;
+    if (state.tickInterval) { clearInterval(state.tickInterval); state.tickInterval = null; }
+    const { error } = await sb.from("time_entries").update({ ended_at: endAt }).eq("id", entry.id);
+    if (error) { toast(error.message, true); return; }
+    const gapMin = Math.round(gapMs / 60000);
+    toast(`Timer auto-stopped (${gapMin} min gap detected).`);
+    await loadEntries(); renderAll();
+    updateTimerUI();
   }
 
   // ---------- Day summary ----------
