@@ -105,9 +105,14 @@ label span { font-size: 12px; }
   color: var(--muted);
 }
 .user-chip .dot {
-  width: 10px; height: 10px; border-radius: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
   background: var(--teal);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform .12s, box-shadow .12s;
 }
+.user-chip .dot:hover { transform: scale(1.15); box-shadow: 0 0 0 3px rgba(255,255,255,.08); }
 
 /* ------- Timer ------- */
 .timer-panel {
@@ -128,19 +133,6 @@ label span { font-size: 12px; }
   color: var(--teal-bright);
   font-weight: 300;
 }
-.sleep-toggle {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-.sleep-toggle input { width: auto; accent-color: var(--teal); cursor: pointer; }
-.sleep-toggle:hover { color: var(--text); }
-
 .project-row { display: flex; gap: 8px; align-items: center; max-width: 420px; width: 100%; }
 .project-row select { flex: 1; }
 #timer-status { margin: 0; min-height: 16px; }

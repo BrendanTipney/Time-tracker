@@ -19,7 +19,6 @@
     entries: [],
     runningEntry: null,
     tickInterval: null,
-    lastTickMs: 0,
     editingId: null,
     editingProject: null,  // project id during project modal
     calDate: startOfMonth(new Date()),
@@ -30,7 +29,7 @@
 
   const WORK_DAY_HOURS = 7;
   const WORK_WEEK_HOURS = WORK_DAY_HOURS * 5;
-  const USER_PALETTE = ["#2dd4bf", "#f472b6", "#a78bfa", "#facc15", "#60a5fa", "#fb923c"];
+  const USER_PALETTE = ["#2dd4bf", "#fb7185", "#a78bfa", "#facc15", "#60a5fa", "#fb923c", "#4ade80", "#38bdf8"];
   const PROJECT_PALETTE = [
     "#2dd4bf", "#5eead4", "#38bdf8", "#60a5fa", "#a78bfa", "#f472b6",
     "#fb7185", "#fb923c", "#facc15", "#a3e635", "#4ade80", "#94a3b8",
@@ -167,13 +166,6 @@
     });
     $("project-add").addEventListener("click", () => openProjectModal());
 
-    // Sleep-pause toggle state is stored globally per-browser.
-    const sleepToggle = $("sleep-pause");
-    sleepToggle.checked = localStorage.getItem("sleepPause") === "1";
-    sleepToggle.addEventListener("change", () => {
-      localStorage.setItem("sleepPause", sleepToggle.checked ? "1" : "0");
-    });
-
     document.querySelectorAll(".tab").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
     });
@@ -191,6 +183,10 @@
     $("project-delete").addEventListener("click", deleteProject);
 
     $("export-btn").addEventListener("click", downloadCsv);
+
+    $("user-dot").addEventListener("click", openUserColorModal);
+    $("user-color-cancel").addEventListener("click", () => $("user-color-modal").classList.add("hidden"));
+    $("user-color-save").addEventListener("click", saveUserColor);
 
     const now = new Date();
     $("export-from").value = isoDate(startOfMonth(now));
@@ -363,10 +359,7 @@
       status.textContent = "Running since " + formatTime(new Date(state.runningEntry.started_at));
       if (state.runningEntry.project_id) sel.value = state.runningEntry.project_id;
       sel.disabled = true;
-      if (!state.tickInterval) {
-        state.lastTickMs = Date.now();
-        state.tickInterval = setInterval(tickTimer, 1000);
-      }
+      if (!state.tickInterval) state.tickInterval = setInterval(tickTimer, 1000);
       tickTimer();
     } else {
       panel.classList.remove("running");
@@ -380,32 +373,9 @@
 
   function tickTimer() {
     if (!state.runningEntry) return;
-    const now = Date.now();
-    // Sleep detection: if the tick gap is much larger than the 1s interval,
-    // the machine likely slept (or tab was deeply throttled). If enabled,
-    // auto-stop the timer at the last live tick.
-    const gap = now - state.lastTickMs;
-    if (gap > 30000 && $("sleep-pause").checked) {
-      const endAt = new Date(state.lastTickMs + 1000).toISOString();
-      autoStopOnSleep(endAt, gap);
-      return;
-    }
-    state.lastTickMs = now;
-    const elapsed = now - new Date(state.runningEntry.started_at).getTime();
+    const elapsed = Date.now() - new Date(state.runningEntry.started_at).getTime();
     $("timer-display").textContent = formatDuration(elapsed, true);
     updateDaySummary();
-  }
-
-  async function autoStopOnSleep(endAt, gapMs) {
-    const entry = state.runningEntry;
-    state.runningEntry = null;
-    if (state.tickInterval) { clearInterval(state.tickInterval); state.tickInterval = null; }
-    const { error } = await sb.from("time_entries").update({ ended_at: endAt }).eq("id", entry.id);
-    if (error) { toast(error.message, true); return; }
-    const gapMin = Math.round(gapMs / 60000);
-    toast(`Timer auto-stopped (${gapMin} min gap detected).`);
-    await loadEntries(); renderAll();
-    updateTimerUI();
   }
 
   // ---------- Day summary ----------
@@ -480,6 +450,40 @@
     updateDaySummary();
     if (document.querySelector(".tab.active")?.dataset.tab === "calendar") renderCalendar();
     if (document.querySelector(".tab.active")?.dataset.tab === "chart") renderChart();
+  }
+
+  function openUserColorModal() {
+    const current = profileOf(state.user.id).color;
+    const wrap = $("user-color-swatches");
+    wrap.innerHTML = "";
+    USER_PALETTE.forEach((c) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.style.background = c;
+      b.dataset.color = c;
+      if (c.toLowerCase() === (current || "").toLowerCase()) b.classList.add("selected");
+      b.addEventListener("click", () => {
+        wrap.querySelectorAll("button").forEach((x) => x.classList.remove("selected"));
+        b.classList.add("selected");
+        $("user-color-custom").value = c;
+      });
+      wrap.appendChild(b);
+    });
+    $("user-color-custom").value = current || "#2dd4bf";
+    $("user-color-custom").addEventListener("input", () => {
+      wrap.querySelectorAll("button").forEach((x) => x.classList.remove("selected"));
+    }, { once: true });
+    $("user-color-modal").classList.remove("hidden");
+  }
+
+  async function saveUserColor() {
+    const selected = $("user-color-swatches").querySelector("button.selected");
+    const color = (selected?.dataset.color || $("user-color-custom").value || "#2dd4bf").toLowerCase();
+    const { error } = await sb.from("profiles").update({ color }).eq("id", state.user.id);
+    if (error) return toast(error.message, true);
+    $("user-color-modal").classList.add("hidden");
+    await loadProfiles();
+    renderAll();
   }
 
   function populateUserChip() {
@@ -812,21 +816,30 @@
     });
     if (!rows.length) return toast("No entries in that range.", true);
 
-    const header = ["Date", "User", "Project", "Note", "Started", "Ended", "Duration (hours)"];
-    const lines = [header.join(",")];
+    // Aggregate into daily totals per user per project.
+    const groups = {};  // key "date|userId|projectId" -> { date, userId, projectId, ms }
     rows.forEach((e) => {
       const s = new Date(e.started_at);
       const end = new Date(e.ended_at);
-      const hours = ((end - s) / 3600000).toFixed(3);
-      const proj = projectOf(e.project_id);
+      const date = isoDate(s);
+      const key = `${date}|${e.user_id}|${e.project_id || ""}`;
+      if (!groups[key]) groups[key] = { date, userId: e.user_id, projectId: e.project_id, ms: 0 };
+      groups[key].ms += end - s;
+    });
+
+    const sorted = Object.values(groups).sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return profileOf(a.userId).display_name.localeCompare(profileOf(b.userId).display_name);
+    });
+
+    const header = ["Date", "User", "Project", "Hours"];
+    const lines = [header.join(",")];
+    sorted.forEach((g) => {
       lines.push([
-        csv(isoDate(s)),
-        csv(profileOf(e.user_id).display_name),
-        csv(proj?.name || ""),
-        csv(e.task || ""),
-        csv(s.toISOString()),
-        csv(end.toISOString()),
-        hours,
+        csv(g.date),
+        csv(profileOf(g.userId).display_name),
+        csv(projectOf(g.projectId)?.name || ""),
+        (g.ms / 3600000).toFixed(2),
       ].join(","));
     });
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });

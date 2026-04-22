@@ -39,7 +39,7 @@
     <header class="topbar">
       <div class="brand">⏱ <span>Time Tracker</span></div>
       <div class="user-chip">
-        <span class="dot" id="user-dot"></span>
+        <button type="button" class="dot" id="user-dot" title="Change your color"></button>
         <span id="user-name">—</span>
         <button id="sign-out" class="btn ghost small">Sign out</button>
       </div>
@@ -55,10 +55,6 @@
       </div>
       <button id="timer-button" class="btn primary big">Start</button>
       <p id="timer-status" class="muted small"></p>
-      <label class="sleep-toggle">
-        <input type="checkbox" id="sleep-pause" />
-        <span>Auto-stop if computer sleeps</span>
-      </label>
     </section>
 
     <nav class="tabs">
@@ -171,6 +167,21 @@
           <button type="submit" class="btn primary">Save</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="user-color-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Your color</h3>
+      <div class="color-swatches" id="user-color-swatches" style="margin-bottom:12px"></div>
+      <label>Custom
+        <input type="color" id="user-color-custom" />
+      </label>
+      <div class="modal-actions">
+        <div class="spacer"></div>
+        <button type="button" id="user-color-cancel" class="btn ghost">Cancel</button>
+        <button type="button" id="user-color-save" class="btn primary">Save</button>
+      </div>
     </div>
   </div>
 
