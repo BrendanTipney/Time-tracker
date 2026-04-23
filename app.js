@@ -880,8 +880,7 @@
     return withSeconds ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(h)}:${pad(m)}`;
   }
   function formatHours(ms) {
-    const h = ms / 3600000;
-    return h >= 10 ? h.toFixed(0) + "h" : h.toFixed(1) + "h";
+    return (ms / 3600000).toFixed(2) + "h";
   }
   function toLocalInput(d) {
     const pad = (n) => String(n).padStart(2, "0");

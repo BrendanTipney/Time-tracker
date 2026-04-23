@@ -516,11 +516,31 @@ label span { font-size: 12px; }
 
 /* ------- Mobile ------- */
 @media (max-width: 560px) {
-  .app { padding: 16px 12px 40px; }
+  .app { padding: 14px 10px 40px; }
   .timer-display { font-size: 44px; }
   .timer-panel { padding: 20px; }
   .tab { padding: 10px 10px; font-size: 13px; }
-  .cal-cell { padding: 4px; font-size: 11px; }
   .entry { grid-template-columns: 4px 1fr auto; }
   .entry .duration { display: none; }
+
+  /* Calendar: shrink the week column, tighten gaps + padding so 7 day
+     columns + week column fit in ~355px of viewport. */
+  .cal-grid-labels,
+  .cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)) 54px; gap: 2px; }
+  .cal-cell {
+    aspect-ratio: auto;
+    min-height: 58px;
+    padding: 3px 3px 4px;
+    font-size: 10px;
+    border-radius: 5px;
+  }
+  .cal-cell .day-num { font-size: 11px; line-height: 1; }
+  .cal-cell .day-user-hours { font-size: 9px; gap: 1px; }
+  .cal-cell .cal-user-dot { width: 5px; height: 5px; }
+  .cal-week-total { padding: 4px 2px; border-radius: 5px; }
+  .cal-week-total .wk-row { gap: 3px; font-size: 9px; justify-content: flex-start; padding-left: 2px; }
+  .cal-week-total .wk-initial { width: 11px; height: 11px; font-size: 7px; }
+  .cal-week-total .wk-row .hours { font-size: 10px; }
+  .cal-week-total .wk-row .delta { font-size: 8px; }
+  .cal-grid-labels { font-size: 9px; }
 }
