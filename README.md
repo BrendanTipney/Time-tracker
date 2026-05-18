@@ -35,6 +35,27 @@ Open `index.html` locally (or after deploy) and sign up you + your partner. Once
 - Today / Calendar / Chart / Export tabs
 - CSV export filtered by date range and user
 
+## Desktop app (Electron, with system tray)
+
+The same web client also runs as a desktop app with a system-tray icon that shows the running timer and lets you start/stop without opening the window.
+
+```bash
+npm install      # one-time
+npm start        # run the desktop app
+
+npm run build:win    # build a Windows installer (.exe via NSIS, output to dist/)
+npm run build:mac    # build a macOS .dmg
+npm run build:linux  # build a Linux AppImage
+```
+
+Tray behaviour:
+- Closing the window hides it; the app stays running in the tray.
+- Right-click tray → **Start/Stop timer**, **Open**, or **Quit**.
+- macOS shows the running elapsed time directly in the menu bar.
+- Windows shows the elapsed time in the tray icon's tooltip.
+
+Both desktop and web read from `config.js` and sync via Supabase, so installing the desktop app on your machine and your partner using the web version (or vice-versa) works without further setup.
+
 ## Tech
 - `@supabase/supabase-js` v2 (auth + Postgres + realtime)
 - Chart.js for the bar chart

@@ -19,6 +19,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
 body { font-size: 15px; line-height: 1.45; }
+
+/* Hide scrollbars site-wide while keeping scrolling functional. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }

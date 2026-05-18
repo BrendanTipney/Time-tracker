@@ -38,6 +38,43 @@
   const $ = (id) => document.getElementById(id);
   const lastProjectKey = () => `lastProject:${state.user?.id || "anon"}`;
 
+  // Electron tray bridge — pushes timer state to the main process so the OS
+  // tray can show the running session and offer Start/Stop. No-op in browser.
+  function pushTrayUpdate() {
+    if (!window.electronAPI) return;
+    const e = state.runningEntry;
+    if (!e) {
+      window.electronAPI.sendTimerUpdate({ running: false, elapsed: 0, project: "" });
+      return;
+    }
+    const elapsed = Date.now() - new Date(e.started_at).getTime();
+    const project = projectOf(e.project_id);
+    window.electronAPI.sendTimerUpdate({
+      running: true,
+      elapsed,
+      project: project?.name || ""
+    });
+  }
+  if (window.electronAPI) {
+    window.electronAPI.onToggleTimer(() => toggleTimer());
+
+    // OS told us it's about to sleep — stop the running timer with the
+    // suspend timestamp so we don't bill sleep time as work.
+    window.electronAPI.onSystemSuspend(async ({ at }) => {
+      if (!state.runningEntry) return;
+      const id = state.runningEntry.id;
+      state.runningEntry = null;
+      try {
+        await sb.from("time_entries").update({ ended_at: new Date(at).toISOString() }).eq("id", id);
+      } catch (_e) { /* will reconcile on resume */ }
+    });
+
+    // Resume: pull fresh state in case anything drifted.
+    window.electronAPI.onSystemResume(async () => {
+      if (state.user) { await loadEntries(); renderAll(); }
+    });
+  }
+
   init();
 
   async function init() {
@@ -369,6 +406,7 @@
       $("timer-display").textContent = "00:00:00";
       if (state.tickInterval) { clearInterval(state.tickInterval); state.tickInterval = null; }
     }
+    pushTrayUpdate();
   }
 
   function tickTimer() {
@@ -376,6 +414,7 @@
     const elapsed = Date.now() - new Date(state.runningEntry.started_at).getTime();
     $("timer-display").textContent = formatDuration(elapsed, true);
     updateDaySummary();
+    pushTrayUpdate();
   }
 
   // ---------- Day summary ----------

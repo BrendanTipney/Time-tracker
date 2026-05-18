@@ -1,0 +1,53 @@
+{
+  "name": "time-tracker-desktop",
+  "version": "1.0.0",
+  "description": "Time Tracker desktop app — Electron wrapper around the web client.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.brendantipney.timetracker",
+    "productName": "Time Tracker",
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "app.js",
+      "styles.css",
+      "config.js",
+      "favicon.svg",
+      "manifest.json",
+      "apple-touch-icon.png",
+      "tray-icon.png",
+      "tray-icon-running.png",
+      "favicon_tracking_on.svg",
+      "app-icon.png",
+      "app-icon.ico"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "app-icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "app-icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "app-icon.png",
+      "category": "Office"
+    }
+  }
+}
